@@ -45,7 +45,57 @@ Duck.ai additions (adopted):
 - Contract test: 23 rows, hours 2–24 once each, 5 finite non-decreasing quantiles in [1, 1e9], ≤8s per case.
 - Submission ladder: at most ~8 submissions, one new commit each, never two in a day if avoidable, last at least 6h before deadline (19 Nov 01:00 UTC). Never submit without a local score.
 
+## v1 implementation and calibration
+
+v1 separates the log mean level of hours 6–23 from each launch's normalized
+hourly shape. Gaussian analog weights use first-hour level and pre-release slope,
+with water filling and a soft class signal from comparable peak ratios above 20.
+The shape blends the analog curve with quadratic OLS in log time. Development
+calibration fits a level regression correction and a linear spline shape correction on three
+practice launches and evaluates the fourth. Only fitted coefficients are shipped;
+the external truth file is never read by the entry or copied into the repository.
+Smoothed held-out residual RMS sets Student-t(8) spreads with a 0.10 floor.
+Level correction features are an intercept, log(hour-1 viewers / 100000), and
+10 times the pre-release slope. Ridge strength is 0.001. The spline has fixed
+knots at hours 2, 4, 6, 10, 14, 18, 21, 24 and coefficient ridge 1. These are
+shared smooth calibration parameters, not stored practice curves. Final coefficients
+use all four practice cases after selecting the configuration by practice LOO.
+
+The selected Gaussian log-level bandwidth is 0.5, class strength 3, with an equal
+analog/parametric shape blend. Persistence candidates of 0.10 and 0.25 were tested;
+LOO selects zero persistence. The soft class probability comes from the weighted
+frequency of comparable ratios exceeding 20; no target name selects a class.
+Each normalized analog influence is capped at 0.25. For first-hour levels above
+the comparable maximum, the predicted mean-level multiplier is floored at one.
+
+Measured on the external practice truth, 2026-11-17:
+
+| Case | Loss | Typical miss | 90% coverage | Contract max runtime |
+| --- | ---: | ---: | ---: | ---: |
+| p00 Wolverine | 0.078718 | 12.77% | 91.30% | 0.115 s |
+| p01 RDR2 | 0.078112 | 13.33% | 95.65% | 0.115 s |
+| p02 GoW Ragnarok | 0.058487 | 8.60% | 100.00% | 0.115 s |
+| p03 Spider-Man 2 | 0.108927 | 17.41% | 91.30% | 0.115 s |
+| Overall | **0.081061** | **12.98%** | **94.57%** | |
+
+The <0.10 submission bar is met; the <0.05 stretch target is not. Practice LOO
+loss is 0.096024 (per case 0.094534, 0.097053, 0.065563, 0.126947), with 91.30%
+coverage. LOO selects hyperparameters on these same four cases, and sigma pools
+their held-out residuals: this is a tuning diagnostic, not an independent test.
+The final fitted practice score is optimistic relative to an unseen GTA VI launch.
+Earlier cubic-shape variants scored 0.129441 and 0.112417; the fixed-knot spline
+improved the shape errors. No practice launch is added to the analog library.
+
+Reproduce calibration with `python3 tools/score.py --truth <external-path> --calibrate`;
+score the entry with `python3 tools/score.py --truth <external-path>` (optionally
+`--output-dir <saved-outputs>`). `--input-dir` selects the kit inputs. Run
+`python3 tools/test_entry.py <kit-input-dir>` for two isolated runs per case.
+All four cases pass finite, ordered, bounded quantiles; 23 unique hours; 8-second
+limit; and byte-identical output. The scorer's rules worked-example self-test passes.
+README.md and LICENSE are unchanged. No submission was made in this session.
+
 ## Risks
+
 - Extrapolation (GTA VI hour 1 far above any comparable) — the risk that decides the result.
 - Practice overfit (4 cases, all console single-player, none a mega event) — tuning to 0.11 on practice can lose on GTA VI.
 - Transcripts — no recorded session = no paid place. Recording runs BEFORE the Codex session; Codex writes with apply_patch (not shell heredocs); ≥2 write/edit per file; ≥5 turns.
